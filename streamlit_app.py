@@ -26,16 +26,17 @@ st.dataframe(fruits_to_show)
 #New section to display fruityvice api responde
 st.header("Fruityvice Fruit Advice!")
 try:
-  fruit_choice = st.text_input('What fruit would you like information about?')
-  if not fruit_choice:
-      st.error("Please select a fruit to get information.")
-  else:
-    fruityvice_response = requests.get("https://fruityvice.com/api/fruit"+ fruit_choice)
-    fruityvice_normalized = pandas.json_normalize(fruityvice_response.json())
-    st.dataframe(fruityvice_normalized)
+    fruit_choice = st.text_input('What fruit would you like information about?')
+    if not fruit_choice:
+        st.error("Please select a fruit to get information.")
+    else:
+        # Corrige la URL de la solicitud a la API
+        fruityvice_response = requests.get("https://fruityvice.com/api/fruit/" + fruit_choice)
+        fruityvice_normalized = pd.json_normalize(fruityvice_response.json())
+        st.dataframe(fruityvice_normalized)
 
 except URLError as e:
-  st.error()
+    st.error("Error occurred. Please check your internet connection.")
   
   
   st.stop()
