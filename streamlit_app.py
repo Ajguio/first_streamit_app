@@ -25,6 +25,11 @@ fruits_to_show = my_fruit_list.loc[fruits_selected]
 # Display the table on the page.
 st.dataframe(fruits_to_show)
 
+def get_fruityvice_data(this_fruit_choice):
+    fruityvice_response = requests.get("https://fruityvice.com/api/fruit/" + this_fruit_choice)
+    fruityvice_normalized = pd.json_normalize(fruityvice_response.json())
+    return fruityvice_normalized
+
 #New section to display fruityvice api responde
 st.header("Fruityvice Fruit Advice!")
 try:
@@ -32,9 +37,8 @@ try:
     if not fruit_choice:
         st.error("Please select a fruit to get information.")
     else:
-        fruityvice_response = requests.get("https://fruityvice.com/api/fruit/" + fruit_choice)
-        fruityvice_normalized = pd.json_normalize(fruityvice_response.json())
-        st.dataframe(fruityvice_normalized)
+        back_from_function = get_fruityvice_data (fruit_choice)        
+        st.dataframe(back_from_function)
 
 except URLError as e:
     st.error("Error occurred. Please check your internet connection.")
