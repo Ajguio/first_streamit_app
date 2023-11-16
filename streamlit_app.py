@@ -30,16 +30,14 @@ try:
     if not fruit_choice:
         st.error("Please select a fruit to get information.")
     else:
-        # Corrige la URL de la solicitud a la API
         fruityvice_response = requests.get("https://fruityvice.com/api/fruit/" + fruit_choice)
         fruityvice_normalized = pd.json_normalize(fruityvice_response.json())
         st.dataframe(fruityvice_normalized)
 
 except URLError as e:
     st.error("Error occurred. Please check your internet connection.")
-  
-  
-  st.stop()
+
+st.stop()
 
 my_cnx = snowflake.connector.connect(**st.secrets["snowflake"])
 my_cur = my_cnx.cursor()
