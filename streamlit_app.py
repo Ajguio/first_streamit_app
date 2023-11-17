@@ -42,7 +42,7 @@ try:
 except URLError as e:
     st.error("Error occurred. Please check your internet connection.")
 
-#st.stop()
+st.stop()
 
 st.header("The fruit load list contains:")
 #Snowflake-related functions
