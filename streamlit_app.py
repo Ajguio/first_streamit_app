@@ -43,7 +43,7 @@ try:
 except URLError as e:
     st.error("Error occurred. Please check your internet connection.")
 
-#st.stop()
+st.stop()
 
 st.header("The fruit load list contains:")
 #Snowflake-related functions
@@ -53,7 +53,7 @@ def get_fruit_load_list():
         return my_cur.fetchall()
 
 #Add a button to load the fruit
-if st.burron ('Get Fruit Load List'):
+if st.button ('Get Fruit Load List'):
     my_cnx = snowflake.connector.connect(**st.secrets["snowflake"])
     my_data_rows = get_fruit_load_list()
     st.dataframe(my_data_rows)
