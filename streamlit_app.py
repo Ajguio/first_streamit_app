@@ -42,8 +42,6 @@ try:
 except URLError as e:
     st.error("Error occurred. Please check your internet connection.")
 
-st.stop()
-
 st.header("The fruit load list contains:")
 #Snowflake-related functions
 def get_fruit_load_list():
@@ -63,3 +61,4 @@ st.write('Thanks for adding ', add_my_fruit)
 
 my_cur.execute ("insert into PC_RIVERY_DB.PUBLIC.FRUIT_LOAD_LIST values ('from streamlit')")
 
+st.stop()
