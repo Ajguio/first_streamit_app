@@ -2,9 +2,8 @@ import streamlit as st
 import pandas
 import requests
 import pandas as pd
+import snowflake.concector
 from urllib.error import URLError
-
-
 
 st.title("My Mom's New Healthy Diner")
 st.header("Breakfast Favorites")
@@ -61,5 +60,3 @@ add_my_fruit = st.text_input('What fruit would you like add?','Kiwi')
 st.write('Thanks for adding ', add_my_fruit)
 
 my_cur.execute ("insert into PC_RIVERY_DB.PUBLIC.FRUIT_LOAD_LIST values ('from streamlit')")
-
-
