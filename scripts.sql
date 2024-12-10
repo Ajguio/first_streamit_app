@@ -16,7 +16,6 @@ ENABLED = TRUE
 STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::195275668159:role/SnowflakeIntegrationRole'
 STORAGE_ALLOWED_LOCATIONS = ('s3://glchallenge/filesemployees/');
 
-
 -- Crear una nueva base de datos
 CREATE OR REPLACE DATABASE company_data;
 
@@ -24,12 +23,10 @@ CREATE OR REPLACE DATABASE company_data;
 USE DATABASE company_data;
 
 -- Crear nuevos esquemas
-CREATE SCHEMA company_data.raw;
-CREATE SCHEMA company_data.hiring_data;
-
+CREATE SCHEMA company_data.raw; -- Esquema RAW / DES
+CREATE SCHEMA company_data.hiring_data; -- -- Esquema TARGET / PROD
 
 -- Tabla departments
---CREATE OR REPLACE TABLE company_data.hiring_data.departments (
 CREATE OR REPLACE TABLE company_data.hiring_data.departments (
     id INTEGER PRIMARY KEY,    -- Primary Key para identificar de forma única el departamento
     department STRING          -- Nombre del departamento
@@ -58,12 +55,7 @@ CREATE OR REPLACE TABLE company_data.raw.processed_files (
     processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-
-select * from company_data.raw.processed_files;
-truncate company_data.raw.processed_files;
-
 -- Tabla de Progreso // Crea una tabla que registre el progreso de los archivos procesados, incluyendo el número de registros procesados hasta el momento.
-
 CREATE OR REPLACE TABLE company_data.raw.file_progress (
     file_name STRING PRIMARY KEY,
     records_processed INTEGER DEFAULT 0,
@@ -71,12 +63,7 @@ CREATE OR REPLACE TABLE company_data.raw.file_progress (
     last_processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-select * from company_data.raw.file_progress; -- deberia ir aumentando
-truncate company_data.raw.file_progress;
-
-
 --Tabla Temporal // Usada para procesar los datos antes del MERGE.
-
 CREATE OR REPLACE TABLE company_data.raw.temp_hired_employees (
     id INTEGER,
     name STRING,
@@ -87,22 +74,13 @@ CREATE OR REPLACE TABLE company_data.raw.temp_hired_employees (
     loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-
-select * from company_data.raw.temp_hired_employees order by name
-truncate company_data.raw.temp_hired_employees;
-
-
 -- Tabla Temporal para Registros Totales // Calcula y guarda el número de registros totales por archivo desde el STAGE en una tabla.
 CREATE OR REPLACE TABLE company_data.raw.stage_file_totals (
     file_name STRING PRIMARY KEY,
     total_records INTEGER
 );
 
-select * from company_data.raw.stage_file_totals;
-truncate company_data.raw.stage_file_totals;
-
-
-
+-- Creacion de los STAGE en RAW por cada archivo
 CREATE OR REPLACE STAGE company_data.raw.stage_departments
 STORAGE_INTEGRATION = my_s3_integration
 URL = 's3://glchallenge/filesemployees/departments/';
@@ -114,15 +92,6 @@ URL = 's3://glchallenge/filesemployees/jobs/';
 CREATE OR REPLACE STAGE company_data.raw.stage_hired_employees
 STORAGE_INTEGRATION = my_s3_integration
 URL = 's3://glchallenge/filesemployees/hired_employees/';
-
-
--- vemos que hay en los buckets cargado en los stage 
-LIST @company_data.raw.stage_departments;
-
-LIST @company_data.raw.stage_jobs;
-
-LIST @company_data.raw.stage_hired_employees;
-
 
 -- Vista para Archivos Incrementales // Esta vista filtra los datos nuevos disponibles en el stage.
 CREATE OR REPLACE VIEW company_data.raw.incremental_stage_files AS
@@ -153,10 +122,7 @@ AND NOT EXISTS (
     AND progress.records_processed >= progress.total_records
 );
 
-select count(*) from company_data.raw.incremental_stage_files;
-
 --Store procedure // El procedimiento realiza el MERGE entre la tabla temporal y la tabla final.
-
 CREATE OR REPLACE PROCEDURE company_data.raw.merge_into_hired_employees()
 RETURNS STRING
 LANGUAGE JAVASCRIPT
@@ -186,7 +152,7 @@ AS $$
     return 'Merge completed successfully.';
 $$;
 
-
+--TAREA que se ejecuta cada cierto tiempo con varias actividades 
 CREATE OR REPLACE TASK company_data.raw.process_hired_employees
 SCHEDULE = '2 MINUTE'
 WAREHOUSE = compute_wh
@@ -242,36 +208,53 @@ BEGIN
 
     -- 5. Marcar archivos como procesados si se completaron
     INSERT INTO company_data.raw.processed_files (file_name)
-    SELECT file_name
-    FROM company_data.raw.file_progress
-    WHERE records_processed >= total_records;
+    SELECT p.file_name
+FROM company_data.raw.file_progress p
+JOIN company_data.raw.stage_file_totals t
+ON p.file_name = t.file_name
+WHERE p.records_processed >= t.total_records
+  AND NOT EXISTS (
+      SELECT 1
+      FROM company_data.raw.processed_files pf
+      WHERE pf.file_name = p.file_name
+  );
 
 END;
 
-
-
+--*********************************VALIDACIONES ***********************************************************
 --Activar Tarea
 ALTER TASK company_data.raw.process_hired_employees RESUME;
-
 --Desactivar la tarea
 ALTER TASK company_data.raw.process_hired_employees SUSPEND;
 
 
--- Verificar el Estado de la Tarea // Revisa el estado de la tarea para confirmar que se está ejecutando correctamente.
+-- Validacion de los archivos en los buckets
+LIST @company_data.raw.stage_departments;
+LIST @company_data.raw.stage_jobs;
+LIST @company_data.raw.stage_hired_employees;
 
 
+SELECT * FROM company_data.raw.incremental_stage_files; -- VISTA, que mapea que no se ha procesado
 
+SELECT * FROM company_data.raw.stage_file_totals; -- Total de registros desde stage / Cuando se ejecuta la tarea 
 
--- Validar los Datos Procesados // Revisa las tablas finales para confirmar que los datos se cargaron correctamente.
+SELECT * FROM company_data.raw.file_progress; -- Progeso de carga de archivos
 
-SELECT count(*) FROM company_data.hiring_data.hired_employees;
+SELECT * FROM company_data.raw.processed_files; -- Archivos procesados
+
+SELECT * FROM company_data.raw.temp_hired_employees; -- Registros procesados en RAW / DES
+
+SELECT * FROM company_data.hiring_data.hired_employees order by id; -- Registros procesados en TARGET / PROD
+
+--*********************************LIMPIAR REGISTRS ***********************************************************
+
+truncate company_data.raw.stage_file_totals;
+truncate company_data.raw.temp_hired_employees;
 truncate company_data.hiring_data.hired_employees;
+truncate company_data.raw.file_progress;
+truncate company_data.raw.processed_files;
 
-SELECT * FROM company_data.raw.processed_files;
-
-
---- CARGA MANUAL ---
-
+--*********************************CARGA MANUAL ***********************************************************
 
 -- Cargar datos en la tabla departments
 COPY INTO company_data.hiring_data.departments
@@ -285,7 +268,8 @@ FILE_FORMAT = (TYPE = 'CSV' FIELD_OPTIONALLY_ENCLOSED_BY = '"' /*SKIP_HEADER = 1
 
 -- Cargar datos en la tabla hired_employees
 COPY INTO company_data.hiring_data.hired_employees
-FROM @company_data.raw.stage_hired_employees/hired_employees.csv
+--FROM @company_data.raw.stage_hired_employees/ -- OJO! aca cargamos TODO ...
+FROM @company_data.raw.stage_hired_employees/hired_employees.csv -- OJO! aca cargamos solo un archivo ...
 FILE_FORMAT = (TYPE = 'CSV' FIELD_OPTIONALLY_ENCLOSED_BY = '"'  /*SKIP_HEADER = 1*/);
 
 
@@ -295,25 +279,23 @@ TRUNCATE TABLE departments;
 select * from jobs;
 TRUNCATE TABLE jobs;
 
-select * from hired_employees order by  ID
+select * from hired_employees order by  ID;
 TRUNCATE TABLE hired_employees;
 
---
-
+--*********************************CONSULTAS SQL ***********************************************************
 -- empleados y sus departamentos
 SELECT e.id AS employee_id, e.name, e.datetime, d.department, j.job
-FROM hired_employees e
-JOIN departments d ON e.department_id = d.id
+FROM company_data.hiring_data.hired_employees e
+JOIN company_data.hiring_data.departments d ON e.department_id = d.id
 JOIN jobs j ON e.job_id = j.id;
 
 --Número de empleados por departamento:
 
 SELECT d.department, COUNT(e.id) AS total_employees
-FROM hired_employees e
-JOIN departments d ON e.department_id = d.id
+FROM company_data.hiring_data.hired_employees e
+JOIN company_data.hiring_data.departments d ON e.department_id = d.id
 GROUP BY d.department
 ORDER BY total_employees DESC;
-
 
 /*Number of employees hired for each job and department in 2021 divided by quarter. The
 table must be ordered alphabetically by department and job.*/
@@ -378,82 +360,6 @@ CROSS JOIN
 WHERE 
     dh.total_hires > ah.mean_hires
 ORDER BY 
-    dh.total_hires DESC;
+    dh.total_hires DESC;    
 
-
---***********************************************************
-BEGIN
-    -- 1. Actualizar totales de registros en stage_file_totals
-    MERGE INTO company_data.raw.stage_file_totals AS target
-    USING (
-        SELECT 
-            METADATA$FILENAME AS file_name,
-            COUNT(*) AS total_records
-        FROM @company_data.raw.stage_hired_employees
-        GROUP BY METADATA$FILENAME
-    ) AS source
-    ON target.file_name = source.file_name
-    WHEN MATCHED THEN
-        UPDATE SET total_records = source.total_records
-    WHEN NOT MATCHED THEN
-        INSERT (file_name, total_records)
-        VALUES (source.file_name, source.total_records);
-
-    -- 2. Insertar registros desde la vista incremental a la tabla temporal
-    INSERT INTO company_data.raw.temp_hired_employees (id, name, datetime, department_id, job_id, file_name)
-    SELECT id, name, datetime, department_id, job_id, file_name
-    FROM company_data.raw.incremental_stage_files
-    order by TO_NUMBER(ID)
-    LIMIT 1000;
-
-    -- 3. Ejecutar el procedimiento para realizar el MERGE
-    CALL company_data.raw.merge_into_hired_employees();
-
-    -- 4. Actualizar progreso en file_progress
-    MERGE INTO company_data.raw.file_progress AS target
-    USING (
-        SELECT 
-            temp.file_name,
-            COUNT(*) AS records_processed,
-            totals.total_records
-        FROM company_data.raw.temp_hired_employees temp
-        JOIN company_data.raw.stage_file_totals totals
-        ON temp.file_name = totals.file_name
-        GROUP BY temp.file_name, totals.total_records
-    ) AS source
-    ON target.file_name = source.file_name
-    WHEN MATCHED THEN
-        UPDATE SET
-            target.records_processed = source.records_processed,
-            target.total_records = source.total_records,
-            target.last_processed_at = CURRENT_TIMESTAMP
-    WHEN NOT MATCHED THEN
-        INSERT (file_name, records_processed, total_records, last_processed_at)
-        VALUES (source.file_name, source.records_processed, source.total_records, CURRENT_TIMESTAMP);
-
-    -- 5. Marcar archivos como procesados si se completaron
-    INSERT INTO company_data.raw.processed_files (file_name)
-    SELECT file_name
-    FROM company_data.raw.file_progress
-    WHERE records_processed >= total_records;
-
-END;
-
---***********************************************************
-SELECT * FROM company_data.raw.incremental_stage_files order by to_number(id)
-
-SELECT * FROM company_data.raw.stage_file_totals;
-truncate company_data.raw.stage_file_totals;
-
-SELECT * FROM company_data.raw.temp_hired_employees order by id
-truncate company_data.raw.temp_hired_employees;
-
-SELECT * FROM company_data.hiring_data.hired_employees order by ID
-truncate company_data.hiring_data.hired_employees;
-
-SELECT * FROM company_data.raw.file_progress;
-truncate company_data.raw.file_progress;
-
-SELECT * FROM company_data.raw.processed_files;
-truncate company_data.raw.processed_files;
-
+    
